@@ -80,38 +80,3 @@ while(cap.isOpened()):
 cv2.destroyAllWindows()
 cap.release()
 
-
-
-#for h in range(int(H)):
-#    for w in range(int(W)):
-#        Blue  = []
-#        Green = []
-#        Red   = []
-#        for frame in range(len(data)):
-#            Blue.append(data[frame][h][w][0])
-#            Green.append(data[frame][h][w][1])
-#            Red.append(data[frame][h][w][2])
-#
-#        Bcount = np.bincount(Blue)
-#        Gcount = np.bincount(Green)
-#        Rcount = np.bincount(Red)
-#
-#        Bmode = np.argmax(Bcount)
-#        Gmode = np.argmax(Gcount)
-#        Rmode = np.argmax(Rcount)
-#
-#        #background[h][w][0] = Bmode
-#        #background[h][w][1] = Gmode
-#        #background[h][w][2] = Rmode
-#        
-#        background[h][w][0] = (int)np.average(Blue)
-#        background[h][w][1] = (int)np.average(Green)
-#        background[h][w][2] = (int)np.average(Red)
-#    print background[h][w]
-
-background_img = Image.new('RGB',(int(W),int(H)))
-for h in range(int(H)):
-    for w in range(int(W)):
-        background_img.putpixel((w,h),(background[h][w][2],background[h][w][1],background[h][w][0]))
-
-background_img.show()
