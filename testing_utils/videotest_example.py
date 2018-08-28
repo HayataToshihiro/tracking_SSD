@@ -13,7 +13,6 @@ W = video.get(cv2.CAP_PROP_FRAME_WIDTH)
 H = video.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
 input_shape = (int(H),int(H),3)#(300,300,3)
-#input_shape = (W,H,3)
 
 # Change this if you run with other classes than VOC
 class_names = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"];
