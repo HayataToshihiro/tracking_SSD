@@ -183,23 +183,19 @@ class VideoTest(object):
                     #print(text , '%.2f' % video_time , ( (xmin+xmax)/2, ymax ) )
                     cv2.putText(to_draw, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1)
                     cv2.circle(to_draw, ((xmin+xmax)/2, ymax), 3, (0, 0, 255), -1)
-                    
-                    
-                    cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=1)
-                    cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=1)
-                    cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=1)
-                    cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=1)
 
                     imagepoint = [[(xmin+xmax)/2],[ymax],[1]]
                     groundpoint = np.dot(H, imagepoint)
                     groundpoint /= groundpoint[2]
                     
 
-                    if((0<=groundpoint[0]) & (groundpoint[0]<=w) & (0<=groundpoint[1]) & (groundpoint[1]<=h) & (40<=video_time) & (video_time<=60)):
+                    if((0<=groundpoint[0]) & (groundpoint[0]<=w) & (0<=groundpoint[1]) & (groundpoint[1]<=h)):
                         print(text , '%.2f' % video_time , ('%.2f' % groundpoint[0] , '%.2f' % groundpoint[1]) )
                         gx.append(groundpoint[0])
                         gy.append(groundpoint[1])
                         gt.append(video_time)
+
+                
 
             # Calculate FPS
             # This computes FPS for everything, not just the model's execution 
@@ -208,7 +204,7 @@ class VideoTest(object):
             exec_time = curr_time - prev_time
             prev_time = curr_time
             accum_time = accum_time + exec_time
-            video_time = video_time + exec_time
+            video_time = video_time + 1/vid.get(cv2.CAP_PROP_FPS)
             curr_fps = curr_fps + 1
             if accum_time > 1:
                 accum_time = accum_time - 1
@@ -219,7 +215,12 @@ class VideoTest(object):
             cv2.rectangle(to_draw, (0,0), (50, 17), (255,255,255), -1)
             cv2.putText(to_draw, fps, (3,10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1)
 
-            
+
+            cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=2)
+            cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=2)
+            cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=2)
+            cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=2)
+
 
             cv2.imshow("SSD result", to_draw)
             cv2.waitKey(10)
