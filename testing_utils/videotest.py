@@ -1,3 +1,4 @@
+#coding: utf-8
 """ A class for testing a SSD model on a video file or webcam """
 
 import cv2
@@ -17,6 +18,20 @@ from scipy import genfromtxt
 import sys
 sys.path.append("..")
 from ssd_utils import BBoxUtility
+import math
+
+class Tracker:
+    def __init__(self,next_ID,x,y,t):
+        print " new tracker created. ID = " + str(next_ID)
+        self.ID = next_ID
+        self.x = x
+        self.y = y
+        self.t = t
+
+    def reload(self,x,y,t):
+        self.x = x
+        self.y = y
+        self.t = t
 
 
 class VideoTest(object):
@@ -49,7 +64,7 @@ class VideoTest(object):
         self.model = model
         self.input_shape = input_shape
         self.bbox_util = BBoxUtility(self.num_classes)
-        
+        self.next_ID = 0
         # Create unique and somewhat visually distinguishable bright
         # colors for the different classes.
         self.class_colors = []
@@ -102,17 +117,23 @@ class VideoTest(object):
         fps = "FPS: ??"
         prev_time = timer()
         
-        gx, gy, gt = [], [], []
+        gx, gy, gt ,gid = [], [], [], []
 
         #4 point designation
         w=6.
         h=6.
         
-        pts1 = np.float32([[383,158],[730,225],[116,285],[500,436]])
+        pts1 = np.float32([[383,158],[730,225],
+                           [116,285],[500,436]])
         pts1 *= self.input_shape[1]/vidh
         pts2 = np.float32([[0,0],[w,0],[0,h],[w,h]])
         
         H = cv2.getPerspectiveTransform(pts1,pts2)
+
+        
+        trackers = []
+        
+
 
         while True:
             retval, orig_image = vid.read()
@@ -120,7 +141,6 @@ class VideoTest(object):
                 print("Done!")
                 break
                 #return
-                
             im_size = (self.input_shape[0], self.input_shape[1])#(300,300)
             resized = cv2.resize(orig_image, im_size)
             rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
@@ -142,6 +162,8 @@ class VideoTest(object):
             # way to avoid that?
             results = self.bbox_util.detection_out(y)
             
+            new_datas = []
+            #new_datas.clear()
             if len(results) > 0 and len(results[0]) > 0:
                 # Interpret output, only one frame is used 
                 det_label = results[0][:, 0]
@@ -160,7 +182,7 @@ class VideoTest(object):
                 top_xmax = det_xmax[top_indices]
                 top_ymax = det_ymax[top_indices]
 
-
+                #Bbox
                 for i in range(top_conf.shape[0]):
                     xmin = int(round(top_xmin[i] * to_draw.shape[1]))
                     ymin = int(round(top_ymin[i] * to_draw.shape[0]))
@@ -194,9 +216,28 @@ class VideoTest(object):
                         gx.append(groundpoint[0])
                         gy.append(groundpoint[1])
                         gt.append(video_time)
+                        new_datas.append([gx[-1],gy[-1],gt[-1],0])
 
+
+
+            #更新
+            for i in range(len(trackers)):
+                for j in range(len(new_datas)):
+                    distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2)
+                    if(distance<=0.5):
+                        trackers[i].reload(new_datas[j][0],new_datas[j][1],video_time)
+                        gid.append(trackers[i].ID)
+                        new_datas[j][3]=1
+            #生成
+            for i in range(len(new_datas)):
+                if(new_datas[i][3]==0):
+                    newdetec = len(gx)-len(new_datas)+i
+                    trackers.append(Tracker(self.next_ID,gx[newdetec],gy[newdetec],video_time))
+                    self.next_ID += 1
                 
-
+            
+            
+            
             # Calculate FPS
             # This computes FPS for everything, not just the model's execution 
             # which may or may not be what you want
