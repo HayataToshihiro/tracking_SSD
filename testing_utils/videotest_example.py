@@ -7,7 +7,9 @@ import sys
 sys.path.append("..")
 from ssd import SSD300
 
-videopath = '/home/amsl/tmp/opencv/samples/data/vtest.avi' 
+#videopath = '/home/amsl/tmp/opencv/samples/data/vtest.avi' 
+#videopath = '/home/amsl/tmp/opencv/samples/data/video(sample).avi'  
+videopath = '/home/amsl/tmp/opencv/samples/data/test.mov' 
 video = cv2.VideoCapture(videopath)
 W = video.get(cv2.CAP_PROP_FRAME_WIDTH)
 H = video.get(cv2.CAP_PROP_FRAME_HEIGHT)

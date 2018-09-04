@@ -28,10 +28,14 @@ class Tracker:
         self.y = y
         self.t = t
 
-    def reload(self,x,y,t):
+    def update(self,x,y,t):
         self.x = x
         self.y = y
         self.t = t
+                                    
+    def scatter_graph(self,x,y,t):
+        color = np.randam.rand(3)
+        ax.scatter(x, y, t, s=5, c=color)
 
 
 class VideoTest(object):
@@ -120,11 +124,15 @@ class VideoTest(object):
         gx, gy, gt ,gid = [], [], [], []
 
         #4 point designation
-        w=6.
-        h=6.
+        #w=6.
+        #h=6.
+        w=4.3
+        h=5.4
         
-        pts1 = np.float32([[383,158],[730,225],
-                           [116,285],[500,436]])
+        #pts1 = np.float32([[383,158],[730,225],
+        #                   [116,285],[500,436]])
+        pts1 = np.float32([[650,298],[1275,312],
+                           [494,830],[1460,845]])
         pts1 *= self.input_shape[1]/vidh
         pts2 = np.float32([[0,0],[w,0],[0,h],[w,h]])
         
@@ -219,20 +227,21 @@ class VideoTest(object):
                         new_datas.append([gx[-1],gy[-1],gt[-1],0])
 
 
-
             #更新
             for i in range(len(trackers)):
                 for j in range(len(new_datas)):
-                    distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2)
-                    if(distance<=0.5):
-                        trackers[i].reload(new_datas[j][0],new_datas[j][1],video_time)
+                    distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2 + (trackers[i].t-new_datas[j][2])**2)
+                    if(distance<=1.0):
+                        trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
                         gid.append(trackers[i].ID)
                         new_datas[j][3]=1
+
             #生成
             for i in range(len(new_datas)):
                 if(new_datas[i][3]==0):
                     newdetec = len(gx)-len(new_datas)+i
                     trackers.append(Tracker(self.next_ID,gx[newdetec],gy[newdetec],video_time))
+                    gid.append(self.next_ID)
                     self.next_ID += 1
                 
             
@@ -270,16 +279,18 @@ class VideoTest(object):
         #create graph
         fig = plt.figure()
         ax=Axes3D(fig)
-        ax.scatter(gx, gy, gt, s=5, c="blue")
+
+        
+        color = np.random.rand(len(trackers),3)
+        for i in range(len(gx)):
+            iro = color[gid[i]]
+            ax.scatter(gx[i],gy[i],gt[i],s=5,c=iro)
+        #ax.scatter(gx, gy, gt, s=5, c="blue")
 
         ax.set_xlabel('x')
         ax.set_ylabel('y')
         ax.set_zlabel('t')
 
-        #for angle in range(0,360*2):
-        #    ax.view_init(30, angle)
-        #    plt.draw()
-        #    plt.pause(.001)
         plt.show()
         
         cv2.destroyAllWindows()
