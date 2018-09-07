@@ -21,6 +21,14 @@ from ssd_utils import BBoxUtility
 import math
 from karmanfilter_2d import matrix
 
+def pro_dens_2d(x,y,mu_x,mu_y,P):
+    x_c = (np.array([x,y])) - (np.array([mu_x, mu_y]))
+    sigma = P[0:2,0:2]
+    det = np.linalg.det(sigma)
+    inv_sigma = np.linalg.inv(sigma)
+    return np.exp(-x_c.dot(inv_sigma).dot(x_c[np.newaxis,:]).T / 2.0) / (2*np.pi*np.sqrt(det))
+
+
 class Tracker:
     def __init__(self,next_ID,x,y,t):
         print " new tracker created. ID = " + str(next_ID)
@@ -31,10 +39,10 @@ class Tracker:
         self.vy = 0
         self.t = t
 
-        self.P = [([0,0,0,0],
-                   [0,0,0,0],
-                   [0,0,1000,0],
-                   [0,0,0,1000])]
+        self.P = matrix([[0,0,0,0],
+                         [0,0,0,0],
+                         [0,0,1000,0],
+                         [0,0,0,1000]])
 
     def kf_motion(self):
         x = matrix([self.x,self.y,self.vx,self.vy])
@@ -44,6 +52,7 @@ class Tracker:
         self.y = x[1]
         self.vx = x[2]
         self.vy = x[3]
+        return x,P
 
     def kf_measurement_update(self,measurement_x,measurement_y):
         x = matrix([self.x,self.y,self.vx,self.vy])
@@ -53,6 +62,7 @@ class Tracker:
         K = self.P * H.transpose() * S.inverse()
         x = x + (K * error)
         self.P = (I - (K * H)) * P
+        return x,P
 
 
     def update(self,x,y,t):
@@ -242,7 +252,7 @@ class VideoTest(object):
 
                     # Draw the box on top of the to_draw image
                     class_num = int(top_label_indices[i])
-                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.99)):
+                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.996)):
                         cv2.rectangle(to_draw, (xmin, ymin), (xmax, ymax), 
                                       self.class_colors[class_num], 2)
                         text = self.class_names[class_num] + " " + ('%.2f' % top_conf[i]) 
@@ -280,6 +290,12 @@ class VideoTest(object):
                         trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
                         gid.append(trackers[i].ID)
                         new_datas[j][3]=1
+
+            #for i in range(len(trackers)):
+            #    trackers[i].kf_motion()
+            #    for j in range(len(new_datas)):
+
+
 
             #generate new tracker
             for i in range(len(new_datas)):
