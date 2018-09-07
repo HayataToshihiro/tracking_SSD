@@ -19,6 +19,7 @@ import sys
 sys.path.append("..")
 from ssd_utils import BBoxUtility
 import math
+from karmanfilter_2d import matrix
 
 class Tracker:
     def __init__(self,next_ID,x,y,t):
@@ -26,7 +27,33 @@ class Tracker:
         self.ID = next_ID
         self.x = x
         self.y = y
+        self.vx = 0
+        self.vy = 0
         self.t = t
+
+        self.P = [([0,0,0,0],
+                   [0,0,0,0],
+                   [0,0,1000,0],
+                   [0,0,0,1000])]
+
+    def kf_motion(self):
+        x = matrix([self.x,self.y,self.vx,self.vy])
+        x = (F * x) + u
+        self.P = F * self.P * F.transpose()
+        self.x = x[0]
+        self.y = x[1]
+        self.vx = x[2]
+        self.vy = x[3]
+
+    def kf_measurement_update(self,measurement_x,measurement_y):
+        x = matrix([self.x,self.y,self.vx,self.vy])
+        Z = matrix(measurement_x,measurement_y)
+        error = Z.transpose() - (H * x)
+        S = H * self.P * H.transpose() + R
+        K = self.P * H.transpose() * S.inverse()
+        x = x + (K * error)
+        self.P = (I - (K * H)) * P
+
 
     def update(self,x,y,t):
         self.x = x
@@ -136,7 +163,23 @@ class VideoTest(object):
         pts1 *= self.input_shape[1]/vidh
         pts2 = np.float32([[0,0],[w,0],[0,h],[w,h]])
         
-        H = cv2.getPerspectiveTransform(pts1,pts2)
+        Homography = cv2.getPerspectiveTransform(pts1,pts2)
+
+        
+        dt = 1/vid.get(cv2.CAP_PROP_FPS)
+        u = matrix([[0.],[0.],[0.],[0.]])
+        F = matrix([[1,0,dt,0],
+                    [0,1,0,dt],
+                    [0,0,1,0],
+                    [0,0,0,1]])
+        H = matrix([[1,0,0,0],
+                    [0,1,0,0]])
+        R = matrix([[dt,0],
+                    [0,dt]])
+        I = matrix([[1,0,0,0],
+                    [0,1,0,0],
+                    [0,0,1,0],
+                    [0,0,0,1]])
 
         
         trackers = []
@@ -199,44 +242,46 @@ class VideoTest(object):
 
                     # Draw the box on top of the to_draw image
                     class_num = int(top_label_indices[i])
-                    cv2.rectangle(to_draw, (xmin, ymin), (xmax, ymax), 
-                                  self.class_colors[class_num], 2)
-                    text = self.class_names[class_num] + " " + ('%.2f' % top_conf[i]) 
-                    
+                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.99)):
+                        cv2.rectangle(to_draw, (xmin, ymin), (xmax, ymax), 
+                                      self.class_colors[class_num], 2)
+                        text = self.class_names[class_num] + " " + ('%.2f' % top_conf[i]) 
+                        
+                        
+                        text_top = (xmin, ymin-10)
+                        text_bot = (xmin + 80, ymin + 5)
+                        text_pos = (xmin + 5, ymin)
+                        cv2.rectangle(to_draw, text_top, text_bot, self.class_colors[class_num], -1)
+                        
+                        
+                        #print(text , '%.2f' % video_time , ( (xmin+xmax)/2, ymax ) )
+                        cv2.putText(to_draw, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1)
+                        cv2.circle(to_draw, ((xmin+xmax)/2, ymax), 3, (0, 0, 255), -1)
+                        
+                        imagepoint = [[(xmin+xmax)/2],[ymax],[1]]
+                        groundpoint = np.dot(Homography, imagepoint)
+                        groundpoint /= groundpoint[2]
+                        
+                        
+                        if((0<=groundpoint[0]) & (groundpoint[0]<=w) & (0<=groundpoint[1]) & (groundpoint[1]<=h)):
+                            print(text , '%.2f' % video_time , ('%.2f' % groundpoint[0] , '%.2f' % groundpoint[1]) )
+                            gx.append(groundpoint[0])
+                            gy.append(groundpoint[1])
+                            gt.append(video_time)
+                            new_datas.append([gx[-1],gy[-1],gt[-1],0])
 
-                    text_top = (xmin, ymin-10)
-                    text_bot = (xmin + 80, ymin + 5)
-                    text_pos = (xmin + 5, ymin)
-                    cv2.rectangle(to_draw, text_top, text_bot, self.class_colors[class_num], -1)
-                    
-                    
-                    #print(text , '%.2f' % video_time , ( (xmin+xmax)/2, ymax ) )
-                    cv2.putText(to_draw, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1)
-                    cv2.circle(to_draw, ((xmin+xmax)/2, ymax), 3, (0, 0, 255), -1)
 
-                    imagepoint = [[(xmin+xmax)/2],[ymax],[1]]
-                    groundpoint = np.dot(H, imagepoint)
-                    groundpoint /= groundpoint[2]
-                    
-
-                    if((0<=groundpoint[0]) & (groundpoint[0]<=w) & (0<=groundpoint[1]) & (groundpoint[1]<=h)):
-                        print(text , '%.2f' % video_time , ('%.2f' % groundpoint[0] , '%.2f' % groundpoint[1]) )
-                        gx.append(groundpoint[0])
-                        gy.append(groundpoint[1])
-                        gt.append(video_time)
-                        new_datas.append([gx[-1],gy[-1],gt[-1],0])
-
-
-            #更新
+            #update
             for i in range(len(trackers)):
                 for j in range(len(new_datas)):
-                    distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2 + (trackers[i].t-new_datas[j][2])**2)
+                    distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + 
+                            (trackers[i].y-new_datas[j][1])**2 + (trackers[i].t-new_datas[j][2])**2)
                     if(distance<=1.0):
                         trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
                         gid.append(trackers[i].ID)
                         new_datas[j][3]=1
 
-            #生成
+            #generate new tracker
             for i in range(len(new_datas)):
                 if(new_datas[i][3]==0):
                     newdetec = len(gx)-len(new_datas)+i
