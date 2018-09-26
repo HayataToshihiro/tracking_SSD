@@ -19,50 +19,63 @@ import sys
 sys.path.append("..")
 from ssd_utils import BBoxUtility
 import math
-from karmanfilter_2d import matrix
+#from karmanfilter_2d import matrix
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 def pro_dens_2d(x,y,mu_x,mu_y,P):
     x_c = (np.array([x,y])) - (np.array([mu_x, mu_y]))
     sigma = P[0:2,0:2]
     det = np.linalg.det(sigma)
     inv_sigma = np.linalg.inv(sigma)
-    return np.exp(-x_c.dot(inv_sigma).dot(x_c[np.newaxis,:]).T / 2.0) / (2*np.pi*np.sqrt(det))
+    return np.exp(-x_c.dot(inv_sigma).dot(x_c[np.newaxis,:].T) / 2.0) / (2*np.pi*np.sqrt(det))
 
+def in_error_ellipse(x,y,P):
+    sigma_x = P[0][0]
+    sigma_y = P[1][1]
+    kai = 9.21034
+    if((x/sigma_x)**2 + (y/sigma_y)**2 <= kai**2 ):
+        return True
+    else:
+        return False
 
 class Tracker:
     def __init__(self,next_ID,x,y,t):
         print " new tracker created. ID = " + str(next_ID)
         self.ID = next_ID
-        self.x = x
-        self.y = y
-        self.vx = 0
-        self.vy = 0
+        self.x = float(x)
+        self.y = float(y)
+        self.vx = 0.
+        self.vy = 0.
         self.t = t
 
-        self.P = matrix([[0,0,0,0],
-                         [0,0,0,0],
-                         [0,0,1000,0],
-                         [0,0,0,1000]])
+        self.P = np.matrix([[0,0,0,0],
+                            [0,0,0,0],
+                            [0,0,1000,0],
+                            [0,0,0,1000]])
 
-    def kf_motion(self):
-        x = matrix([self.x,self.y,self.vx,self.vy])
-        x = (F * x) + u
-        self.P = F * self.P * F.transpose()
-        self.x = x[0]
-        self.y = x[1]
-        self.vx = x[2]
-        self.vy = x[3]
-        return x,P
+    def kf_motion(self,F,u):
+        x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
+        x = x#(F * x) + u
+        self.P = F * self.P * F.T
 
-    def kf_measurement_update(self,measurement_x,measurement_y):
-        x = matrix([self.x,self.y,self.vx,self.vy])
-        Z = matrix(measurement_x,measurement_y)
-        error = Z.transpose() - (H * x)
-        S = H * self.P * H.transpose() + R
-        K = self.P * H.transpose() * S.inverse()
+        self.x = x[0].tolist()[0][0]
+        self.y = x[1].tolist()[0][0]
+        self.vx = x[2].tolist()[0][0]
+        self.vy = x[3].tolist()[0][0]
+
+    def kf_measurement_update(self,measurement_x,measurement_y,H,R,I):
+        x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
+        Z = np.matrix(measurement_x,measurement_y)
+        error = Z.T - (H * x)
+        S = H * self.P * H.T + R
+        K = self.P * H.T * (S**-1)
         x = x + (K * error)
         self.P = (I - (K * H)) * P
-        return x,P
+        self.x = x[0].tolist()[0][0]
+        self.y = x[1].tolist()[0][0]
+        self.vx = x[2].tolist()[0][0]
+        self.vy = x[3].tolist()[0][0]
 
 
     def update(self,x,y,t):
@@ -177,16 +190,16 @@ class VideoTest(object):
 
         
         dt = 1/vid.get(cv2.CAP_PROP_FPS)
-        u = matrix([[0.],[0.],[0.],[0.]])
-        F = matrix([[1,0,dt,0],
+        u = np.matrix([[0.],[0.],[0.],[0.]])
+        F = np.matrix([[1,0,dt,0],
                     [0,1,0,dt],
                     [0,0,1,0],
                     [0,0,0,1]])
-        H = matrix([[1,0,0,0],
+        H = np.matrix([[1,0,0,0],
                     [0,1,0,0]])
-        R = matrix([[dt,0],
+        R = np.matrix([[dt,0],
                     [0,dt]])
-        I = matrix([[1,0,0,0],
+        I = np.matrix([[1,0,0,0],
                     [0,1,0,0],
                     [0,0,1,0],
                     [0,0,0,1]])
@@ -214,14 +227,14 @@ class VideoTest(object):
             # Use model to predict 
             inputs = [image.img_to_array(rgb)]
             tmp_inp = np.array(inputs)
-            x = preprocess_input(tmp_inp)
+            X = preprocess_input(tmp_inp)
             
-            y = self.model.predict(x)
+            Y = self.model.predict(X)
             
             
             # This line creates a new TensorFlow device every time. Is there a 
             # way to avoid that?
-            results = self.bbox_util.detection_out(y)
+            results = self.bbox_util.detection_out(Y)
             
             new_datas = []
             #new_datas.clear()
@@ -270,8 +283,10 @@ class VideoTest(object):
                         
                         imagepoint = [[(xmin+xmax)/2],[ymax],[1]]
                         groundpoint = np.dot(Homography, imagepoint)
-                        groundpoint /= groundpoint[2]
-                        
+                        groundpoint = (groundpoint/groundpoint[2]).tolist()
+                        groundpoint[0] = groundpoint[0][0]
+                        groundpoint[1] = groundpoint[1][0]
+                        groundpoint[2] = groundpoint[2][0]
                         
                         if((0<=groundpoint[0]) & (groundpoint[0]<=w) & (0<=groundpoint[1]) & (groundpoint[1]<=h)):
                             print(text , '%.2f' % video_time , ('%.2f' % groundpoint[0] , '%.2f' % groundpoint[1]) )
@@ -284,18 +299,21 @@ class VideoTest(object):
             #update
             for i in range(len(trackers)):
                 for j in range(len(new_datas)):
-                    distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + 
-                            (trackers[i].y-new_datas[j][1])**2 + (trackers[i].t-new_datas[j][2])**2)
+                    trackers[i].kf_motion(F,u)
+                    distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2)
                     if(distance<=1.0):
+
                         trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
                         gid.append(trackers[i].ID)
                         new_datas[j][3]=1
 
-            #for i in range(len(trackers)):
-            #    trackers[i].kf_motion()
-            #    for j in range(len(new_datas)):
-
-
+            scores = [[0 for i in range(len(new_datas))] for j in range(len(trackers))]
+            for i in range(len(trackers)):
+                trackers[i].kf_motion(F,u)
+                for j in range(len(new_datas)):
+                    scores[i][j] = pro_dens_2d(new_datas[j][0],new_datas[j][1],trackers[i].x,trackers[i].y,trackers[i].P)
+                    
+            print scores
 
             #generate new tracker
             for i in range(len(new_datas)):

@@ -1,9 +1,3 @@
-# Fill in the matrices P, F, H, R and I at the bottom
-#
-# This question requires NO CODING, just fill in the 
-# matrices where indicated. Please do not delete or modify
-# any provided code OR comments. Good luck!
-
 from math import *
 
 class matrix:
@@ -226,32 +220,28 @@ I = matrix([[1,0,0,0],
         # 4d identity matrix
 
 #### DO NOT MODIFY ANYTHING ABOVE HERE ####
-#for n in range(len(measurements)):
 
-x,P = motion(x, P)
-n=0 
-x,P = measurement(x, P)
-
-
-x,P = motion(x, P)
-n=1
-x,P = measurement(x, P)
+#x,P = motion(x, P)
+#n=0 
+#x,P = measurement(x, P)
 
 
-x,P = motion(x, P)
-n=2
-x,P = measurement(x, P)
+#x,P = motion(x, P)
+#n=1
+#x,P = measurement(x, P)
 
 
-x,P = motion(x, P)
-n=3
-x,P = measurement(x, P)
+#x,P = motion(x, P)
+#n=2
+#x,P = measurement(x, P)
 
 
-x,P = motion(x, P)
-x,P = motion(x, P)
-x,P = motion(x, P)
-#motion(x, P)
-#motion(x, P)
-#motion(x, P)
+#x,P = motion(x, P)
+#n=3
+#x,P = measurement(x, P)
+
+
+#x,P = motion(x, P)
+#x,P = motion(x, P)
+#x,P = motion(x, P)
 

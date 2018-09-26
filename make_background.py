@@ -7,7 +7,7 @@ import statistics
 import math
 
 
-Videopath = '/home/amsl/tmp/opencv/samples/data/vtest.avi'
+Videopath = '/home/amsl/tmp/opencv/samples/data/test.mov'
 cap = cv2.VideoCapture(Videopath)
 W = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
 H = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
