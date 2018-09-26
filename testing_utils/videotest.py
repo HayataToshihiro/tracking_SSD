@@ -31,8 +31,8 @@ def pro_dens_2d(x,y,mu_x,mu_y,P):
     return np.exp(-x_c.dot(inv_sigma).dot(x_c[np.newaxis,:].T) / 2.0) / (2*np.pi*np.sqrt(det))
 
 def in_error_ellipse(x,y,P):
-    sigma_x = P[0][0]
-    sigma_y = P[1][1]
+    sigma_x = P[0,0]
+    sigma_y = P[1,1]
     kai = 9.21034
     if((x/sigma_x)**2 + (y/sigma_y)**2 <= kai**2 ):
         return True
@@ -49,14 +49,14 @@ class Tracker:
         self.vy = 0.
         self.t = t
 
-        self.P = np.matrix([[0,0,0,0],
-                            [0,0,0,0],
+        self.P = np.matrix([[100,0,0,0],
+                            [0,100,0,0],
                             [0,0,1000,0],
                             [0,0,0,1000]])
 
     def kf_motion(self,F,u):
         x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
-        x = x#(F * x) + u
+        x = (F * x) + u
         self.P = F * self.P * F.T
 
         self.x = x[0].tolist()[0][0]
@@ -66,12 +66,12 @@ class Tracker:
 
     def kf_measurement_update(self,measurement_x,measurement_y,H,R,I):
         x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
-        Z = np.matrix(measurement_x,measurement_y)
+        Z = np.matrix([measurement_x,measurement_y])
         error = Z.T - (H * x)
         S = H * self.P * H.T + R
         K = self.P * H.T * (S**-1)
         x = x + (K * error)
-        self.P = (I - (K * H)) * P
+        self.P = (I - (K * H)) * self.P
         self.x = x[0].tolist()[0][0]
         self.y = x[1].tolist()[0][0]
         self.vx = x[2].tolist()[0][0]
@@ -191,18 +191,18 @@ class VideoTest(object):
         
         dt = 1/vid.get(cv2.CAP_PROP_FPS)
         u = np.matrix([[0.],[0.],[0.],[0.]])
-        F = np.matrix([[1,0,dt,0],
-                    [0,1,0,dt],
-                    [0,0,1,0],
-                    [0,0,0,1]])
-        H = np.matrix([[1,0,0,0],
-                    [0,1,0,0]])
-        R = np.matrix([[dt,0],
-                    [0,dt]])
-        I = np.matrix([[1,0,0,0],
-                    [0,1,0,0],
-                    [0,0,1,0],
-                    [0,0,0,1]])
+        F = np.matrix([[ 1, 0,dt, 0],
+                       [ 0, 1, 0,dt],
+                       [ 0, 0, 1, 0],
+                       [ 0, 0, 0, 1]])
+        H = np.matrix([[ 1, 0, 0, 0],
+                       [ 0, 1, 0, 0]])
+        R = np.matrix([[dt, 0],
+                       [ 0,dt]])
+        I = np.matrix([[ 1, 0, 0, 0],
+                       [ 0, 1, 0, 0],
+                       [ 0, 0, 1, 0],
+                       [ 0, 0, 0, 1]])
 
         
         trackers = []
@@ -265,7 +265,7 @@ class VideoTest(object):
 
                     # Draw the box on top of the to_draw image
                     class_num = int(top_label_indices[i])
-                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.996)):
+                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.996)):#0.996
                         cv2.rectangle(to_draw, (xmin, ymin), (xmax, ymax), 
                                       self.class_colors[class_num], 2)
                         text = self.class_names[class_num] + " " + ('%.2f' % top_conf[i]) 
@@ -297,23 +297,38 @@ class VideoTest(object):
 
 
             #update
+            #for i in range(len(trackers)):
+            #    for j in range(len(new_datas)):
+            #        trackers[i].kf_motion(F,u)
+            #        distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2)
+            #        if(distance<=1.0):
+            #            trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
+            #            gid.append(trackers[i].ID)
+            #            new_datas[j][3]=1
+            
+            for i in range(len(trackers)):
+                trackers[i].kf_motion(F,u)
+
             for i in range(len(trackers)):
                 for j in range(len(new_datas)):
-                    trackers[i].kf_motion(F,u)
-                    distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2)
-                    if(distance<=1.0):
-
-                        trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
+                    if(in_error_ellipse(trackers[i].x-new_datas[j][0],trackers[i].y-new_datas[j][1],trackers[i].P)):
+                        trackers[i].kf_measurement_update(new_datas[j][0],new_datas[j][1],H,R,I)
+                        trackers[i].update(trackers[i].x,trackers[i].y,video_time)
                         gid.append(trackers[i].ID)
                         new_datas[j][3]=1
 
-            scores = [[0 for i in range(len(new_datas))] for j in range(len(trackers))]
-            for i in range(len(trackers)):
-                trackers[i].kf_motion(F,u)
-                for j in range(len(new_datas)):
-                    scores[i][j] = pro_dens_2d(new_datas[j][0],new_datas[j][1],trackers[i].x,trackers[i].y,trackers[i].P)
+            if(len(trackers)):
+                print "(%.2f, %.2f, %.2f, %.2f)" % (trackers[0].x, trackers[0].y, trackers[0].vx, trackers[0].vy)
+                print trackers[0].P
+
+
+
+            #scores = [[0 for i in range(len(new_datas))] for j in range(len(trackers))]
+            #for i in range(len(trackers)):
+            #    trackers[i].kf_motion(F,u)
+            #    for j in range(len(new_datas)):
+            #        scores[i][j] = pro_dens_2d(new_datas[j][0],new_datas[j][1],trackers[i].x,trackers[i].y,trackers[i].P)
                     
-            print scores
 
             #generate new tracker
             for i in range(len(new_datas)):
