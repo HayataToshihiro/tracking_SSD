@@ -23,6 +23,10 @@ import math
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
+def hsv2rgb(h,s,v):
+    bgr = cv2.cvtColor(np.array([[[h,s,v]]], dtype=np.uint8), cv2.COLOR_HSV2BGR)[0][0]
+    return [bgr[2], bgr[1], bgr[0]]
+
 def pro_dens_2d(x,y,mu_x,mu_y,P):
     x_c = (np.array([x,y])) - (np.array([mu_x, mu_y]))
     sigma = P[0:2,0:2]
@@ -49,15 +53,15 @@ class Tracker:
         self.vy = 0.
         self.t = t
 
-        self.P = np.matrix([[100,0,0,0],
-                            [0,100,0,0],
+        self.P = np.matrix([[0.5,0,0,0],
+                            [0,0.5,0,0],
                             [0,0,1000,0],
                             [0,0,0,1000]])
 
-    def kf_motion(self,F,u):
+    def kf_motion(self,F,u,Q):
         x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
         x = (F * x) + u
-        self.P = F * self.P * F.T
+        self.P = F * self.P * F.T + Q
 
         self.x = x[0].tolist()[0][0]
         self.y = x[1].tolist()[0][0]
@@ -173,6 +177,17 @@ class VideoTest(object):
         
         gx, gy, gt ,gid = [], [], [], []
 
+        hsv = [[int(np.random.rand()*100),255,255] for i in range(255)]
+        for i in range(len(hsv)):
+            hsv[i][0] = (30*i)%100
+        #color = np.random.rand(1024,3)
+        color = []
+        for i in range(len(hsv)):
+            color.append(hsv2rgb(hsv[i][0], hsv[i][1], hsv[i][2]))
+            color[i][0] = float(color[i][0]/255)
+            color[i][1] = float(color[i][1]/255)
+            color[i][2] = float(color[i][2]/255)
+
         #4 point designation
         #w=6.
         #h=6.
@@ -187,9 +202,10 @@ class VideoTest(object):
         pts2 = np.float32([[0,0],[w,0],[0,h],[w,h]])
         
         Homography = cv2.getPerspectiveTransform(pts1,pts2)
-
+        Homography2 = cv2.getPerspectiveTransform(pts2,pts1)
         
         dt = 1/vid.get(cv2.CAP_PROP_FPS)
+
         u = np.matrix([[0.],[0.],[0.],[0.]])
         F = np.matrix([[ 1, 0,dt, 0],
                        [ 0, 1, 0,dt],
@@ -197,12 +213,20 @@ class VideoTest(object):
                        [ 0, 0, 0, 1]])
         H = np.matrix([[ 1, 0, 0, 0],
                        [ 0, 1, 0, 0]])
-        R = np.matrix([[dt, 0],
-                       [ 0,dt]])
+        R = np.matrix([[ 0.5, 0],
+                       [ 0 ,1]])
         I = np.matrix([[ 1, 0, 0, 0],
                        [ 0, 1, 0, 0],
                        [ 0, 0, 1, 0],
                        [ 0, 0, 0, 1]])
+        
+        G = np.matrix([[ dt*dt/2., 0],
+                       [ 0, dt*dt/2.],
+                       [ dt, 0],
+                       [ 0, dt]])
+        sigma_a = 0.05
+
+        Q = sigma_a * sigma_a * G * G.T
 
         
         trackers = []
@@ -265,7 +289,7 @@ class VideoTest(object):
 
                     # Draw the box on top of the to_draw image
                     class_num = int(top_label_indices[i])
-                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.996)):#0.996
+                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.9)):#0.6#0.996
                         cv2.rectangle(to_draw, (xmin, ymin), (xmax, ymax), 
                                       self.class_colors[class_num], 2)
                         text = self.class_names[class_num] + " " + ('%.2f' % top_conf[i]) 
@@ -299,7 +323,7 @@ class VideoTest(object):
             #update
             #for i in range(len(trackers)):
             #    for j in range(len(new_datas)):
-            #        trackers[i].kf_motion(F,u)
+            #        trackers[i].kf_motion(F,u,Q)
             #        distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2)
             #        if(distance<=1.0):
             #            trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
@@ -307,8 +331,7 @@ class VideoTest(object):
             #            new_datas[j][3]=1
             
             for i in range(len(trackers)):
-                trackers[i].kf_motion(F,u)
-
+                trackers[i].kf_motion(F,u,Q)
             for i in range(len(trackers)):
                 for j in range(len(new_datas)):
                     if(in_error_ellipse(trackers[i].x-new_datas[j][0],trackers[i].y-new_datas[j][1],trackers[i].P)):
@@ -316,16 +339,16 @@ class VideoTest(object):
                         trackers[i].update(trackers[i].x,trackers[i].y,video_time)
                         gid.append(trackers[i].ID)
                         new_datas[j][3]=1
-
-            if(len(trackers)):
-                print "(%.2f, %.2f, %.2f, %.2f)" % (trackers[0].x, trackers[0].y, trackers[0].vx, trackers[0].vy)
-                print trackers[0].P
+            
+            #if(len(trackers)):
+            #    print "(%.2f, %.2f, %.2f, %.2f)" % (trackers[0].x, trackers[0].y, trackers[0].vx, trackers[0].vy)
+            #    print trackers[0].P
 
 
 
             #scores = [[0 for i in range(len(new_datas))] for j in range(len(trackers))]
             #for i in range(len(trackers)):
-            #    trackers[i].kf_motion(F,u)
+            #    trackers[i].kf_motion(F,u,Q)
             #    for j in range(len(new_datas)):
             #        scores[i][j] = pro_dens_2d(new_datas[j][0],new_datas[j][1],trackers[i].x,trackers[i].y,trackers[i].P)
                     
@@ -359,7 +382,16 @@ class VideoTest(object):
             cv2.rectangle(to_draw, (0,0), (50, 17), (255,255,255), -1)
             cv2.putText(to_draw, fps, (3,10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1)
 
+            for i in range(len(gx)):
+                ip = np.dot(Homography2, [[gx[i]],[gy[i]],[1]])
+                ip = (ip/ip[2]).tolist()
+                ip[0] = int(ip[0][0])
+                ip[1] = int(ip[1][0])
+                ip[2] = int(ip[2][0])
+                cv2.circle(to_draw,(ip[0],ip[1]),3,(color[gid[i]][0]*255, color[gid[i]][1]*255, color[gid[i]][2]*255),-1)
 
+
+            
             cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=2)
             cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=2)
             cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=2)
@@ -374,10 +406,9 @@ class VideoTest(object):
         fig = plt.figure()
         ax=Axes3D(fig)
 
-        
-        color = np.random.rand(len(trackers),3)
+        #color = np.random.rand(len(trackers),3)
         for i in range(len(gx)):
-            iro = color[gid[i]]
+            iro = (color[gid[i]][0],color[gid[i]][1],color[gid[i]][2])
             ax.scatter(gx[i],gy[i],gt[i],s=5,c=iro)
         #ax.scatter(gx, gy, gt, s=5, c="blue")
 
