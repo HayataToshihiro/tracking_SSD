@@ -1,5 +1,9 @@
 #coding: utf-8
-""" A class for testing a SSD model on a video file or webcam """
+#/usr/bin/env/ python
+import rospy
+import tf
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from visualization_msgs.msg import MarkerArray
 
 import cv2
 import keras
@@ -18,7 +22,7 @@ from scipy import genfromtxt
 import sys
 sys.path.append("..")
 from ssd_utils import BBoxUtility
-import math
+import math as m
 #from karmanfilter_2d import matrix
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
@@ -27,24 +31,9 @@ def hsv2rgb(h,s,v):
     bgr = cv2.cvtColor(np.array([[[h,s,v]]], dtype=np.uint8), cv2.COLOR_HSV2BGR)[0][0]
     return [bgr[2], bgr[1], bgr[0]]
 
-def pro_dens_2d(x,y,mu_x,mu_y,P):
-    x_c = (np.array([x,y])) - (np.array([mu_x, mu_y]))
-    sigma = P[0:2,0:2]
-    det = np.linalg.det(sigma)
-    inv_sigma = np.linalg.inv(sigma)
-    return np.exp(-x_c.dot(inv_sigma).dot(x_c[np.newaxis,:].T) / 2.0) / (2*np.pi*np.sqrt(det))
-
-def in_error_ellipse(x,y,P):
-    sigma_x = P[0,0]
-    sigma_y = P[1,1]
-    kai = 9.21034
-    if((x/sigma_x)**2 + (y/sigma_y)**2 <= kai**2 ):
-        return True
-    else:
-        return False
 
 class Tracker:
-    def __init__(self,next_ID,x,y,t):
+    def __init__(self,next_ID,x,y,t,dt):
         print " new tracker created. ID = " + str(next_ID)
         self.ID = next_ID
         self.x = float(x)
@@ -55,27 +44,48 @@ class Tracker:
 
         self.P = np.matrix([[0.5,0,0,0],
                             [0,0.5,0,0],
-                            [0,0,1000,0],
-                            [0,0,0,1000]])
+                            [0,0,2,0],
+                            [0,0,0,2]])
+        self.u = np.matrix([[0.],[0.],[0.],[0.]])
+        self.F = np.matrix([[ 1, 0,dt, 0],
+                            [ 0, 1, 0,dt],
+                            [ 0, 0, 1, 0],
+                            [ 0, 0, 0, 1]])
+        self.H = np.matrix([[ 1, 0, 0, 0],
+                            [ 0, 1, 0, 0]])
+        self.R = np.matrix([[0.5, 0],
+                            [  0, 0.5]])
+        self.I = np.matrix([[ 1, 0, 0, 0],
+                            [ 0, 1, 0, 0],
+                            [ 0, 0, 1, 0],
+                            [ 0, 0, 0, 1]])
+        
+        G = np.matrix([[ dt*dt/2., 0],
+                       [ 0, dt*dt/2.],
+                       [ dt, 0],
+                       [ 0, dt]])
+        sigma_a = 0.05
 
-    def kf_motion(self,F,u,Q):
+        self.Q = sigma_a * sigma_a * G * G.T
+
+    def kf_motion(self):
         x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
-        x = (F * x) + u
-        self.P = F * self.P * F.T + Q
+        x = (self.F * x) + self.u
+        self.P = self.F * self.P * self.F.T + self.Q
 
         self.x = x[0].tolist()[0][0]
         self.y = x[1].tolist()[0][0]
         self.vx = x[2].tolist()[0][0]
         self.vy = x[3].tolist()[0][0]
 
-    def kf_measurement_update(self,measurement_x,measurement_y,H,R,I):
+    def kf_measurement_update(self,measurement_x,measurement_y):
         x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
         Z = np.matrix([measurement_x,measurement_y])
-        error = Z.T - (H * x)
-        S = H * self.P * H.T + R
-        K = self.P * H.T * (S**-1)
+        error = Z.T - (self.H * x)
+        S = self.H * self.P * self.H.T + self.R
+        K = self.P * self.H.T * (np.linalg.inv(S))
         x = x + (K * error)
-        self.P = (I - (K * H)) * self.P
+        self.P = (self.I - (K * self.H)) * self.P
         self.x = x[0].tolist()[0][0]
         self.y = x[1].tolist()[0][0]
         self.vx = x[2].tolist()[0][0]
@@ -86,10 +96,22 @@ class Tracker:
         self.x = x
         self.y = y
         self.t = t
-                                    
-    def scatter_graph(self,x,y,t):
-        color = np.randam.rand(3)
-        ax.scatter(x, y, t, s=5, c=color)
+    
+    def pro_dens_2d(self,x,y):
+        x_c = (np.array([x,y])) - (np.array([self.x, self.y]))
+        sigma = self.P[0:2,0:2]
+        det = np.linalg.det(sigma)
+        inv_sigma = np.linalg.inv(sigma)
+        return np.exp(-x_c.dot(inv_sigma).dot(x_c[np.newaxis,:].T) / 2.0) / (2*np.pi*np.sqrt(det))
+    
+    def in_error_ellipse(self,error_x,error_y):
+        sigma_x = self.P[0,0]
+        sigma_y = self.P[1,1]
+        kai = 5.99146#95%  #9.21034#99%
+        if((error_x/sigma_x)**2 + (error_y/sigma_y)**2 <= kai**2 ):
+            return True
+        else:
+            return False
 
 
 class VideoTest(object):
@@ -174,6 +196,7 @@ class VideoTest(object):
         curr_fps = 0
         fps = "FPS: ??"
         prev_time = timer()
+
         
         gx, gy, gt ,gid = [], [], [], []
 
@@ -189,8 +212,6 @@ class VideoTest(object):
             color[i][2] = float(color[i][2]/255)
 
         #4 point designation
-        #w=6.
-        #h=6.
         w=4.3
         h=5.4
         
@@ -206,34 +227,26 @@ class VideoTest(object):
         
         dt = 1/vid.get(cv2.CAP_PROP_FPS)
 
-        u = np.matrix([[0.],[0.],[0.],[0.]])
-        F = np.matrix([[ 1, 0,dt, 0],
-                       [ 0, 1, 0,dt],
-                       [ 0, 0, 1, 0],
-                       [ 0, 0, 0, 1]])
-        H = np.matrix([[ 1, 0, 0, 0],
-                       [ 0, 1, 0, 0]])
-        R = np.matrix([[ 0.5, 0],
-                       [ 0 ,1]])
-        I = np.matrix([[ 1, 0, 0, 0],
-                       [ 0, 1, 0, 0],
-                       [ 0, 0, 1, 0],
-                       [ 0, 0, 0, 1]])
-        
-        G = np.matrix([[ dt*dt/2., 0],
-                       [ 0, dt*dt/2.],
-                       [ dt, 0],
-                       [ 0, dt]])
-        sigma_a = 0.05
-
-        Q = sigma_a * sigma_a * G * G.T
 
         
         trackers = []
         
 
+        pub_gauss1 = rospy.Publisher('gauss1',PoseWithCovarianceStamped,queue_size = 10)
+        pub_gauss2 = rospy.Publisher('gauss2',PoseWithCovarianceStamped,queue_size = 10)
+        pub_gauss3 = rospy.Publisher('gauss3',PoseWithCovarianceStamped,queue_size = 10)
+        #pub_measure = rospy.Publisher('measurements',MarkerArray,queue_size = 10)
+        rospy.init_node('tracker',anonymous=True)
+        r=rospy.Rate(10)
 
-        while True:
+        gauss1 = PoseWithCovarianceStamped()
+        gauss2 = PoseWithCovarianceStamped()
+        gauss3 = PoseWithCovarianceStamped()
+        gauss1.header.frame_id = "map"
+        gauss2.header.frame_id = "map"
+        gauss3.header.frame_id = "map"
+
+        while not rospy.is_shutdown():
             retval, orig_image = vid.read()
             if not retval:
                 print("Done!")
@@ -323,7 +336,7 @@ class VideoTest(object):
             #update
             #for i in range(len(trackers)):
             #    for j in range(len(new_datas)):
-            #        trackers[i].kf_motion(F,u,Q)
+            #        trackers[i].kf_motion()
             #        distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2)
             #        if(distance<=1.0):
             #            trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
@@ -331,14 +344,62 @@ class VideoTest(object):
             #            new_datas[j][3]=1
             
             for i in range(len(trackers)):
-                trackers[i].kf_motion(F,u,Q)
+                trackers[i].kf_motion()
             for i in range(len(trackers)):
                 for j in range(len(new_datas)):
-                    if(in_error_ellipse(trackers[i].x-new_datas[j][0],trackers[i].y-new_datas[j][1],trackers[i].P)):
-                        trackers[i].kf_measurement_update(new_datas[j][0],new_datas[j][1],H,R,I)
+                    if(trackers[i].in_error_ellipse(trackers[i].x-new_datas[j][0],trackers[i].y-new_datas[j][1])):
+                        trackers[i].kf_measurement_update(new_datas[j][0],new_datas[j][1])
                         trackers[i].update(trackers[i].x,trackers[i].y,video_time)
                         gid.append(trackers[i].ID)
                         new_datas[j][3]=1
+                        
+            if(len(trackers)):
+                gauss1.pose.pose.position.x = trackers[0].x
+                gauss1.pose.pose.position.y = trackers[0].y
+                theta = m.atan(trackers[0].vy/trackers[0].vx)
+                q = tf.transformations.quaternion_from_euler(theta,0,0)
+                gauss1.pose.pose.orientation.x = q[0]
+                gauss1.pose.pose.orientation.y = q[1]
+                gauss1.pose.pose.orientation.z = q[2]
+                gauss1.pose.pose.orientation.w = q[3]
+                gauss1.pose.covariance = np.zeros(36)
+                gauss1.pose.covariance[0] = trackers[0].P[0,0]
+                gauss1.pose.covariance[1] = trackers[0].P[0,1]
+                gauss1.pose.covariance[6] = trackers[0].P[1,0]
+                gauss1.pose.covariance[7] = trackers[0].P[1,1]
+                pub_gauss1.publish(gauss1)
+            if(len(trackers)>1):
+                gauss2.pose.pose.position.x = trackers[1].x
+                gauss2.pose.pose.position.y = trackers[1].y
+                theta = m.atan(trackers[0].vy/trackers[1].vx)
+                q = tf.transformations.quaternion_from_euler(0,0,theta)
+                gauss2.pose.pose.orientation.x = q[0]
+                gauss2.pose.pose.orientation.y = q[1]
+                gauss2.pose.pose.orientation.z = q[2]
+                gauss2.pose.pose.orientation.w = q[3]
+                gauss2.pose.covariance = np.zeros(36)
+                gauss2.pose.covariance[0] = trackers[1].P[0,0]
+                gauss2.pose.covariance[1] = trackers[1].P[0,1]
+                gauss2.pose.covariance[6] = trackers[1].P[1,0]
+                gauss2.pose.covariance[7] = trackers[1].P[1,1]
+                pub_gauss2.publish(gauss2)
+            if(len(trackers)>2):
+                gauss3.pose.pose.position.x = trackers[2].x
+                gauss3.pose.pose.position.y = trackers[2].y
+                theta = m.atan(trackers[0].vy/trackers[2].vx)
+                q = tf.transformations.quaternion_from_euler(0,0,theta)
+                gauss3.pose.pose.orientation.x = q[0]
+                gauss3.pose.pose.orientation.y = q[1]
+                gauss3.pose.pose.orientation.z = q[2]
+                gauss3.pose.pose.orientation.w = q[3]
+                gauss3.pose.covariance = np.zeros(36)
+                gauss3.pose.covariance[0] = trackers[1].P[0,0]
+                gauss3.pose.covariance[1] = trackers[1].P[0,1]
+                gauss3.pose.covariance[6] = trackers[1].P[1,0]
+                gauss3.pose.covariance[7] = trackers[1].P[1,1]
+                pub_gauss3.publish(gauss3)
+
+
             
             #if(len(trackers)):
             #    print "(%.2f, %.2f, %.2f, %.2f)" % (trackers[0].x, trackers[0].y, trackers[0].vx, trackers[0].vy)
@@ -348,16 +409,17 @@ class VideoTest(object):
 
             #scores = [[0 for i in range(len(new_datas))] for j in range(len(trackers))]
             #for i in range(len(trackers)):
-            #    trackers[i].kf_motion(F,u,Q)
+            #    trackers[i].kf_motion()
             #    for j in range(len(new_datas)):
-            #        scores[i][j] = pro_dens_2d(new_datas[j][0],new_datas[j][1],trackers[i].x,trackers[i].y,trackers[i].P)
+            #        scores[i][j] = tracker[i].pro_dens_2d(new_datas[j][0],new_datas[j][1])
                     
 
             #generate new tracker
             for i in range(len(new_datas)):
                 if(new_datas[i][3]==0):
                     newdetec = len(gx)-len(new_datas)+i
-                    trackers.append(Tracker(self.next_ID,gx[newdetec],gy[newdetec],video_time))
+                    trackers.append(Tracker(self.next_ID,gx[newdetec],gy[newdetec],video_time,dt))
+
                     gid.append(self.next_ID)
                     self.next_ID += 1
                 
@@ -400,6 +462,7 @@ class VideoTest(object):
 
             cv2.imshow("SSD result", to_draw)
             cv2.waitKey(10)
+            r.sleep()
 
 
         #create graph
@@ -408,7 +471,7 @@ class VideoTest(object):
 
         #color = np.random.rand(len(trackers),3)
         for i in range(len(gx)):
-            iro = (color[gid[i]][0],color[gid[i]][1],color[gid[i]][2])
+            iro = (color[gid[i]][2],color[gid[i]][1],color[gid[i]][0])
             ax.scatter(gx[i],gy[i],gt[i],s=5,c=iro)
         #ax.scatter(gx, gy, gt, s=5, c="blue")
 
