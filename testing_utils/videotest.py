@@ -4,6 +4,7 @@ import rospy
 import tf
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from visualization_msgs.msg import MarkerArray
+from visualization_msgs.msg import Marker
 
 import cv2
 import keras
@@ -235,7 +236,7 @@ class VideoTest(object):
         pub_gauss1 = rospy.Publisher('gauss1',PoseWithCovarianceStamped,queue_size = 10)
         pub_gauss2 = rospy.Publisher('gauss2',PoseWithCovarianceStamped,queue_size = 10)
         pub_gauss3 = rospy.Publisher('gauss3',PoseWithCovarianceStamped,queue_size = 10)
-        #pub_measure = rospy.Publisher('measurements',MarkerArray,queue_size = 10)
+        pub_markers = rospy.Publisher('markers',MarkerArray,queue_size = 10)
         rospy.init_node('tracker',anonymous=True)
         r=rospy.Rate(10)
 
@@ -245,6 +246,9 @@ class VideoTest(object):
         gauss1.header.frame_id = "map"
         gauss2.header.frame_id = "map"
         gauss3.header.frame_id = "map"
+
+        markers = MarkerArray();
+
 
         while not rospy.is_shutdown():
             retval, orig_image = vid.read()
@@ -453,7 +457,39 @@ class VideoTest(object):
                 cv2.circle(to_draw,(ip[0],ip[1]),3,(color[gid[i]][0]*255, color[gid[i]][1]*255, color[gid[i]][2]*255),-1)
 
 
-            
+                marker = Marker()
+                marker.header.frame_id = "map"
+                marker.header.stamp = rospy.Time.now()
+                marker.ns = "basic_shapes"
+                marker.id = 0
+                marker.type = 2#sphere
+                marker.action = Marker.ADD
+                marker.pose.position.x = gx[i]
+                marker.pose.position.y = gy[i]
+                marker.pose.position.z = 0.
+                marker.pose.orientation.x = 0.
+                marker.pose.orientation.y = 0.
+                marker.pose.orientation.z = 0.
+                marker.pose.orientation.w = 1.
+                marker.scale.x = 0.1
+                marker.scale.y = 0.1
+                marker.scale.z = 0.1
+                marker.color.r = color[gid[i]][2]
+                marker.color.g = color[gid[i]][1]
+                marker.color.b = color[gid[i]][0]
+                marker.color.a = 1.
+                marker.lifetime = rospy.Duration()
+
+                markers.markers.append(marker)
+            print len(markers.markers)
+
+
+
+
+            pub_markers.publish(markers)
+            del markers.markers[:]
+
+
             cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=2)
             cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=2)
             cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=2)
