@@ -1,5 +1,5 @@
-#coding: utf-8
 #/usr/bin/env/ python
+#coding: utf-8
 import rospy
 import tf
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -45,8 +45,8 @@ class Tracker:
 
         self.P = np.matrix([[0.5,0,0,0],
                             [0,0.5,0,0],
-                            [0,0,2,0],
-                            [0,0,0,2]])
+                            [0,0,0.5,0],
+                            [0,0,0,0.5]])
         self.u = np.matrix([[0.],[0.],[0.],[0.]])
         self.F = np.matrix([[ 1, 0,dt, 0],
                             [ 0, 1, 0,dt],
@@ -306,7 +306,7 @@ class VideoTest(object):
 
                     # Draw the box on top of the to_draw image
                     class_num = int(top_label_indices[i])
-                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.9)):#0.6#0.996
+                    if((self.class_names[class_num]=='person') & (top_conf[i]>=0.9)):#0.6#0.9#0.996
                         cv2.rectangle(to_draw, (xmin, ymin), (xmax, ymax), 
                                       self.class_colors[class_num], 2)
                         text = self.class_names[class_num] + " " + ('%.2f' % top_conf[i]) 
@@ -375,7 +375,7 @@ class VideoTest(object):
             if(len(trackers)>1):
                 gauss2.pose.pose.position.x = trackers[1].x
                 gauss2.pose.pose.position.y = trackers[1].y
-                theta = m.atan(trackers[0].vy/trackers[1].vx)
+                theta = m.atan(trackers[1].vy/trackers[1].vx)
                 q = tf.transformations.quaternion_from_euler(0,0,theta)
                 gauss2.pose.pose.orientation.x = q[0]
                 gauss2.pose.pose.orientation.y = q[1]
@@ -390,7 +390,7 @@ class VideoTest(object):
             if(len(trackers)>2):
                 gauss3.pose.pose.position.x = trackers[2].x
                 gauss3.pose.pose.position.y = trackers[2].y
-                theta = m.atan(trackers[0].vy/trackers[2].vx)
+                theta = m.atan(trackers[2].vy/trackers[2].vx)
                 q = tf.transformations.quaternion_from_euler(0,0,theta)
                 gauss3.pose.pose.orientation.x = q[0]
                 gauss3.pose.pose.orientation.y = q[1]
@@ -461,7 +461,7 @@ class VideoTest(object):
                 marker.header.frame_id = "map"
                 marker.header.stamp = rospy.Time.now()
                 marker.ns = "basic_shapes"
-                marker.id = 0
+                marker.id = i
                 marker.type = 2#sphere
                 marker.action = Marker.ADD
                 marker.pose.position.x = gx[i]
@@ -478,7 +478,7 @@ class VideoTest(object):
                 marker.color.g = color[gid[i]][1]
                 marker.color.b = color[gid[i]][0]
                 marker.color.a = 1.
-                marker.lifetime = rospy.Duration()
+                marker.lifetime = rospy.Duration(0)
 
                 markers.markers.append(marker)
             print len(markers.markers)
@@ -515,7 +515,7 @@ class VideoTest(object):
         ax.set_ylabel('y')
         ax.set_zlabel('t')
 
-        plt.show()
+        #plt.show()
         
         cv2.destroyAllWindows()
         vid.release()
