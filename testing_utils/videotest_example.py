@@ -14,8 +14,11 @@ video = cv2.VideoCapture(videopath)
 W = video.get(cv2.CAP_PROP_FRAME_WIDTH)
 H = video.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-#input_shape = (int(H),int(H),3)#(300,300,3)
+# input_shape = (int(H),int(H),3)#(300,300,3)
 input_shape = (600,600,3)
+# input_shape = (300,300,3)
+confidence = 0.9
+#confidence = 0.7
 
 # Change this if you run with other classes than VOC
 class_names = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"];
@@ -25,7 +28,7 @@ model = SSD300(input_shape, num_classes=NUM_CLASSES)
 
 # Change this path if you want to use your own trained weights
 model.load_weights('../weights_SSD300.hdf5')
-vid_test = VideoTest(class_names, model, input_shape)
+vid_test = VideoTest(class_names, model, input_shape, confidence)
 
 # To test on webcam 0, remove the parameter (or change it to another number
 # to test on that webcam)

@@ -1,6 +1,6 @@
 #/usr/bin/env/ python
 #coding: utf-8
-import rospy
+import rospy# {{{
 import tf
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from visualization_msgs.msg import MarkerArray
@@ -26,12 +26,46 @@ from ssd_utils import BBoxUtility
 import math as m
 #from karmanfilter_2d import matrix
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'# }}}
 
-def hsv2rgb(h,s,v):
+def hsv2rgb(h,s,v):# {{{
     bgr = cv2.cvtColor(np.array([[[h,s,v]]], dtype=np.uint8), cv2.COLOR_HSV2BGR)[0][0]
-    return [bgr[2], bgr[1], bgr[0]]
+    return [bgr[2], bgr[1], bgr[0]]# }}}
 
+def plot(x, y, id_, color, Homography2, to_draw, plots):
+    ip = np.dot(Homography2, [[x],[y],[1]])
+    ip = (ip/ip[2]).tolist()
+    ip[0] = int(ip[0][0])
+    ip[1] = int(ip[1][0])
+    ip[2] = int(ip[2][0])
+    plots.append([ip[0],ip[1],color])
+    #cv2.circle(to_draw,(ip[0],ip[1]),3,(color[0]*255, color[1]*255, color[2]*255),-1)
+
+def set_marker(x, y, id_, color):
+    marker = Marker()
+    marker.header.frame_id = "map"
+    marker.header.stamp = rospy.Time.now()
+    marker.ns = "basic_shapes"
+    marker.type = 2#sphere
+    marker.action = Marker.ADD
+    marker.pose.position.z = 0.
+    marker.pose.orientation.x = 0.
+    marker.pose.orientation.y = 0.
+    marker.pose.orientation.z = 0.
+    marker.pose.orientation.w = 1.
+    marker.scale.x = 0.1
+    marker.scale.y = 0.1
+    marker.scale.z = 0.1
+    marker.color.a = 1.
+    marker.lifetime = rospy.Duration(0)
+    
+    marker.id = id_
+    marker.pose.position.x = x
+    marker.pose.position.y = y
+    marker.color.r = color[2]
+    marker.color.g = color[1]
+    marker.color.b = color[0]
+    id_ += 1
 
 class Tracker:
     def __init__(self,next_ID,x,y,t,dt):
@@ -42,7 +76,11 @@ class Tracker:
         self.vx = 0.
         self.vy = 0.
         self.t = t
-
+        hsv = [(29*next_ID)%100,255,255]
+        color = hsv2rgb(hsv[0],hsv[1],hsv[2])
+        self.col = [color[0]/255., color[1]/255., color[2]/255.]
+        
+        # setting matrix# {{{
         self.P = np.matrix([[0.5,0,0,0],
                             [0,0.5,0,0],
                             [0,0,0.5,0],
@@ -54,22 +92,22 @@ class Tracker:
                             [ 0, 0, 0, 1]])
         self.H = np.matrix([[ 1, 0, 0, 0],
                             [ 0, 1, 0, 0]])
-        self.R = np.matrix([[0.5, 0],
-                            [  0, 0.5]])
+        # self.R = np.matrix([[0.5, 0],
+        #                    [  0, 0.5]])
+        self.R = np.matrix([[  1, 0],
+                            [  0, 1]])
         self.I = np.matrix([[ 1, 0, 0, 0],
                             [ 0, 1, 0, 0],
                             [ 0, 0, 1, 0],
                             [ 0, 0, 0, 1]])
-        
         G = np.matrix([[ dt*dt/2., 0],
                        [ 0, dt*dt/2.],
                        [ dt, 0],
                        [ 0, dt]])
         sigma_a = 0.05
+        self.Q = sigma_a * sigma_a * G * G.T# }}}
 
-        self.Q = sigma_a * sigma_a * G * G.T
-
-    def kf_motion(self):
+    def kf_motion(self):# {{{
         x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
         x = (self.F * x) + self.u
         self.P = self.F * self.P * self.F.T + self.Q
@@ -77,9 +115,9 @@ class Tracker:
         self.x = x[0].tolist()[0][0]
         self.y = x[1].tolist()[0][0]
         self.vx = x[2].tolist()[0][0]
-        self.vy = x[3].tolist()[0][0]
+        self.vy = x[3].tolist()[0][0]# }}}
 
-    def kf_measurement_update(self,measurement_x,measurement_y):
+    def kf_measurement_update(self,measurement_x,measurement_y):# {{{
         x = np.matrix([[self.x],[self.y],[self.vx],[self.vy]])
         Z = np.matrix([measurement_x,measurement_y])
         error = Z.T - (self.H * x)
@@ -90,20 +128,19 @@ class Tracker:
         self.x = x[0].tolist()[0][0]
         self.y = x[1].tolist()[0][0]
         self.vx = x[2].tolist()[0][0]
-        self.vy = x[3].tolist()[0][0]
+        self.vy = x[3].tolist()[0][0]# }}}
 
-
-    def update(self,x,y,t):
+    def update(self,x,y,t):# {{{
         self.x = x
         self.y = y
-        self.t = t
+        self.t = t# }}}
     
-    def pro_dens_2d(self,x,y):
+    def pro_dens_2d(self,x,y):# {{{
         x_c = (np.array([x,y])) - (np.array([self.x, self.y]))
         sigma = self.P[0:2,0:2]
         det = np.linalg.det(sigma)
         inv_sigma = np.linalg.inv(sigma)
-        return np.exp(-x_c.dot(inv_sigma).dot(x_c[np.newaxis,:].T) / 2.0) / (2*np.pi*np.sqrt(det))
+        return np.exp(-x_c.dot(inv_sigma).dot(x_c[np.newaxis,:].T) / 2.0) / (2*np.pi*np.sqrt(det))# }}}
     
     def in_error_ellipse(self,error_x,error_y):
         sigma_x = self.P[0,0]
@@ -114,9 +151,8 @@ class Tracker:
         else:
             return False
 
-
 class VideoTest(object):
-    """ Class for testing a trained SSD model on a video file and show the
+    """ Class for testing a trained SSD model on a video file and show the# {{{
         result in a window. Class is designed so that one VideoTest object 
         can be created for a model, and the same object can then be used on 
         multiple videos and webcams.      
@@ -137,13 +173,14 @@ class VideoTest(object):
                          the same number of classes as the length of        
                          class_names.
     
-    """
+    """# }}}
     
-    def __init__(self, class_names, model, input_shape):
+    def __init__(self, class_names, model, input_shape,confidence):# {{{
         self.class_names = class_names
         self.num_classes = len(class_names)
         self.model = model
         self.input_shape = input_shape
+        self.confidence = confidence
         self.bbox_util = BBoxUtility(self.num_classes)
         self.next_ID = 0
         # Create unique and somewhat visually distinguishable bright
@@ -158,10 +195,10 @@ class VideoTest(object):
             col[0][0][2] = 255 # Value
             cvcol = cv2.cvtColor(col, cv2.COLOR_HSV2BGR)
             col = (int(cvcol[0][0][0]), int(cvcol[0][0][1]), int(cvcol[0][0][2]))
-            self.class_colors.append(col) 
+            self.class_colors.append(col) # }}}
         
-    def run(self, video_path = 0, start_frame = 0, conf_thresh = 0.6):
-        """ Runs the test on a video (or webcam)             
+    def run(self, video_path = 0, start_frame = 0, conf_thresh = 0):
+        """ Runs the test on a video (or webcam)             # {{{
         
         # Arguments
         video_path: A file path to a video to be tested on. Can also be a number, 
@@ -179,16 +216,16 @@ class VideoTest(object):
         vid = cv2.VideoCapture(video_path)
         if not vid.isOpened():
             raise IOError(("Couldn't open video file or webcam. If you're "
-            "trying to open a webcam, make sure you video_path is an integer!"))
+            "trying to open a webcam, make sure you video_path is an integer!"))# }}}
         
-        # Compute aspect ratio of video     
+        # Compute aspect ratio of video     # {{{
         #msvidw = vid.get(cv2.cv.CV_CAP_PROP_FRAME_WIDTH)
         #vidh = vid.get(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT)
         vidw = vid.get(cv2.CAP_PROP_FRAME_WIDTH)
         vidh = vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
-        vidar = vidw/vidh
+        vidar = vidw/vidh# }}}
         
-        # Skip frames until reaching start_frame
+        # Skip frames until reaching start_frame# {{{
         if start_frame > 0:
             vid.set(cv2.cv.CV_CAP_PROP_POS_MSEC, start_frame)
             
@@ -196,14 +233,14 @@ class VideoTest(object):
         video_time = 0
         curr_fps = 0
         fps = "FPS: ??"
-        prev_time = timer()
+        prev_time = timer()# }}}
 
         
         gx, gy, gt ,gid = [], [], [], []
 
         hsv = [[int(np.random.rand()*100),255,255] for i in range(255)]
         for i in range(len(hsv)):
-            hsv[i][0] = (30*i)%100
+            hsv[i][0] = (29*i)%100
         #color = np.random.rand(1024,3)
         color = []
         for i in range(len(hsv)):
@@ -216,8 +253,6 @@ class VideoTest(object):
         w=4.3
         h=5.4
         
-        #pts1 = np.float32([[383,158],[730,225],
-        #                   [116,285],[500,436]])
         pts1 = np.float32([[650,298],[1275,312],
                            [494,830],[1460,845]])
         pts1 *= self.input_shape[1]/vidh
@@ -228,10 +263,7 @@ class VideoTest(object):
         
         dt = 1/vid.get(cv2.CAP_PROP_FPS)
 
-
-        
         trackers = []
-        
 
         pub_gauss1 = rospy.Publisher('gauss1',PoseWithCovarianceStamped,queue_size = 10)
         pub_gauss2 = rospy.Publisher('gauss2',PoseWithCovarianceStamped,queue_size = 10)
@@ -247,11 +279,12 @@ class VideoTest(object):
         gauss2.header.frame_id = "map"
         gauss3.header.frame_id = "map"
 
-        markers = MarkerArray();
+        markers = MarkerArray()
+        plots = []
 
 
         while not rospy.is_shutdown():
-            retval, orig_image = vid.read()
+            retval, orig_image = vid.read()# {{{
             if not retval:
                 print("Done!")
                 break
@@ -275,10 +308,8 @@ class VideoTest(object):
             
             # This line creates a new TensorFlow device every time. Is there a 
             # way to avoid that?
-            results = self.bbox_util.detection_out(Y)
-            
+            results = self.bbox_util.detection_out(Y)# }}}
             new_datas = []
-            #new_datas.clear()
             if len(results) > 0 and len(results[0]) > 0:
                 # Interpret output, only one frame is used 
                 det_label = results[0][:, 0]
@@ -288,7 +319,8 @@ class VideoTest(object):
                 det_xmax = results[0][:, 4]
                 det_ymax = results[0][:, 5]
 
-                top_indices = [i for i, conf in enumerate(det_conf) if conf >= conf_thresh]
+                # top_indices = [i for i, conf in enumerate(det_conf) if conf >= conf_thresh]
+                top_indices = [i for i, conf in enumerate(det_conf) if conf >= self.confidence]
 
                 top_conf = det_conf[top_indices]
                 top_label_indices = det_label[top_indices].tolist()
@@ -329,34 +361,32 @@ class VideoTest(object):
                         groundpoint[1] = groundpoint[1][0]
                         groundpoint[2] = groundpoint[2][0]
                         
-                        if((0<=groundpoint[0]) & (groundpoint[0]<=w) & (0<=groundpoint[1]) & (groundpoint[1]<=h)):
-                            print(text , '%.2f' % video_time , ('%.2f' % groundpoint[0] , '%.2f' % groundpoint[1]) )
-                            gx.append(groundpoint[0])
-                            gy.append(groundpoint[1])
-                            gt.append(video_time)
-                            new_datas.append([gx[-1],gy[-1],gt[-1],0])
-
-
-            #update
-            #for i in range(len(trackers)):
-            #    for j in range(len(new_datas)):
-            #        trackers[i].kf_motion()
-            #        distance = math.sqrt((trackers[i].x-new_datas[j][0])**2 + (trackers[i].y-new_datas[j][1])**2)
-            #        if(distance<=1.0):
-            #            trackers[i].update(new_datas[j][0],new_datas[j][1],video_time)
-            #            gid.append(trackers[i].ID)
-            #            new_datas[j][3]=1
-            
+                        # if((0<=groundpoint[0]) & (groundpoint[0]<=w) & (0<=groundpoint[1]) & (groundpoint[1]<=h)):
+                        #     print(text , '%.2f' % video_time , ('%.2f' % groundpoint[0] , '%.2f' % groundpoint[1]) )
+                        #     gx.append(groundpoint[0])
+                        #     gy.append(groundpoint[1])
+                        #     gt.append(video_time)
+                        #     new_datas.append([gx[-1],gy[-1],gt[-1],0])
+                        print(text , '%.2f' % video_time , ('%.2f' % groundpoint[0] , '%.2f' % groundpoint[1]) )
+                        gx.append(groundpoint[0])
+                        gy.append(groundpoint[1])
+                        gt.append(video_time)
+                        new_datas.append([gx[-1],gy[-1],gt[-1],0])
+            # motion update
             for i in range(len(trackers)):
                 trackers[i].kf_motion()
+            # measurement update
             for i in range(len(trackers)):
                 for j in range(len(new_datas)):
                     if(trackers[i].in_error_ellipse(trackers[i].x-new_datas[j][0],trackers[i].y-new_datas[j][1])):
                         trackers[i].kf_measurement_update(new_datas[j][0],new_datas[j][1])
                         trackers[i].update(trackers[i].x,trackers[i].y,video_time)
+                        # plot(trackers[i].x,trackers[i].y,i,trackers[i].col,Homography2,to_draw,plots)
                         gid.append(trackers[i].ID)
                         new_datas[j][3]=1
-                        
+                plot(trackers[i].x,trackers[i].y,i,trackers[i].col,Homography2,to_draw,plots)
+            
+            # ROS pose with coveriance# {{{
             if(len(trackers)):
                 gauss1.pose.pose.position.x = trackers[0].x
                 gauss1.pose.pose.position.y = trackers[0].y
@@ -401,36 +431,25 @@ class VideoTest(object):
                 gauss3.pose.covariance[1] = trackers[1].P[0,1]
                 gauss3.pose.covariance[6] = trackers[1].P[1,0]
                 gauss3.pose.covariance[7] = trackers[1].P[1,1]
-                pub_gauss3.publish(gauss3)
-
-
-            
-            #if(len(trackers)):
-            #    print "(%.2f, %.2f, %.2f, %.2f)" % (trackers[0].x, trackers[0].y, trackers[0].vx, trackers[0].vy)
-            #    print trackers[0].P
-
-
+                pub_gauss3.publish(gauss3)# }}}
 
             #scores = [[0 for i in range(len(new_datas))] for j in range(len(trackers))]
             #for i in range(len(trackers)):
             #    trackers[i].kf_motion()
             #    for j in range(len(new_datas)):
             #        scores[i][j] = tracker[i].pro_dens_2d(new_datas[j][0],new_datas[j][1])
-                    
 
             #generate new tracker
             for i in range(len(new_datas)):
                 if(new_datas[i][3]==0):
                     newdetec = len(gx)-len(new_datas)+i
                     trackers.append(Tracker(self.next_ID,gx[newdetec],gy[newdetec],video_time,dt))
-
                     gid.append(self.next_ID)
+                    plot(trackers[self.next_ID].x,trackers[self.next_ID].y,self.next_ID,trackers[self.next_ID].col,Homography2,to_draw,plots)
                     self.next_ID += 1
-                
+                    
             
-            
-            
-            # Calculate FPS
+            # Calculate FPS# {{{
             # This computes FPS for everything, not just the model's execution 
             # which may or may not be what you want
             curr_time = timer()
@@ -442,21 +461,16 @@ class VideoTest(object):
             if accum_time > 1:
                 accum_time = accum_time - 1
                 fps = "FPS: " + str(curr_fps)
-                curr_fps = 0
+                curr_fps = 0# }}}
 
-            # Draw FPS in top left corner
+            # Draw FPS in top left corner# {{{
             cv2.rectangle(to_draw, (0,0), (50, 17), (255,255,255), -1)
-            cv2.putText(to_draw, fps, (3,10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1)
+            cv2.putText(to_draw, fps, (3,10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1)# }}}
+            
+            for i in range(len(plots)):
+                cv2.circle(to_draw,(plots[i][0],plots[i][1]),3,(plots[i][2][0]*255, plots[i][2][1]*255, plots[i][2][2]*255),-1)
 
             for i in range(len(gx)):
-                ip = np.dot(Homography2, [[gx[i]],[gy[i]],[1]])
-                ip = (ip/ip[2]).tolist()
-                ip[0] = int(ip[0][0])
-                ip[1] = int(ip[1][0])
-                ip[2] = int(ip[2][0])
-                cv2.circle(to_draw,(ip[0],ip[1]),3,(color[gid[i]][0]*255, color[gid[i]][1]*255, color[gid[i]][2]*255),-1)
-
-
                 marker = Marker()
                 marker.header.frame_id = "map"
                 marker.header.stamp = rospy.Time.now()
@@ -481,41 +495,32 @@ class VideoTest(object):
                 marker.lifetime = rospy.Duration(0)
 
                 markers.markers.append(marker)
-            print len(markers.markers)
-
-
-
-
+            #print len(markers.markers)
             pub_markers.publish(markers)
             del markers.markers[:]
 
-
+            # draw a sqare# {{{
             cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=2)
             cv2.line(to_draw, (pts1[0][0],pts1[0][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=2)
             cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[1][0],pts1[1][1]), (100,200,100), thickness=2)
-            cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=2)
-
+            cv2.line(to_draw, (pts1[3][0],pts1[3][1]),(pts1[2][0],pts1[2][1]), (100,200,100), thickness=2)# }}}# }}}
 
             cv2.imshow("SSD result", to_draw)
             cv2.waitKey(10)
             r.sleep()
 
-
-        #create graph
-        fig = plt.figure()
-        ax=Axes3D(fig)
-
+        #create graph# {{{
+        #fig = plt.figure()
+        #ax=Axes3D(fig)
         #color = np.random.rand(len(trackers),3)
-        for i in range(len(gx)):
-            iro = (color[gid[i]][2],color[gid[i]][1],color[gid[i]][0])
-            ax.scatter(gx[i],gy[i],gt[i],s=5,c=iro)
+        #for i in range(len(gx)):
+        #    iro = (color[gid[i]][2],color[gid[i]][1],color[gid[i]][0])
+        #    ax.scatter(gx[i],gy[i],gt[i],s=5,c=iro)
         #ax.scatter(gx, gy, gt, s=5, c="blue")
-
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_zlabel('t')
-
-        #plt.show()
+        #ax.set_xlabel('x')
+        #ax.set_ylabel('y')
+        #ax.set_zlabel('t')
+        #plt.show()# }}}
         
         cv2.destroyAllWindows()
         vid.release()
